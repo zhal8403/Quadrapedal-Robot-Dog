@@ -1,1 +1,316 @@
+#include <Wire.h>
+#include <Adafruit_PWMServoDriver.h>
+#include <math.h>
 
+const int SDA_PIN = 21;
+const int SCL_PIN = 22;
+
+Adafruit_PWMServoDriver pwm(0x40);
+
+const int SERVOMIN = 120;
+const int SERVOMAX = 620;
+
+// Leg channel pairs
+// 0 = front right, 1 = back left, 2 = front left, 3 = back right
+const int LEG_A_CH[4] = {0, 3, 6, 9};
+const int LEG_B_CH[4] = {1, 4, 7, 10};
+
+// Right-side legs use the positive direction; left-side legs are mirrored.
+const float LEG_DIRECTION[4] = {1.0f, -1.0f, -1.0f, 1.0f};
+
+// Linkage dimensions(mm)
+const float D  = 27.5f;
+const float L1 = 80.966f;
+const float L2 = 110.969f;
+
+// Motion settings
+const int MOVEMENT_SPEED = 500;
+const float PAW_LOWER_OFFSET_MM = 5.0f;
+const float PAW_Y_RANGE_SCALE = 0.15f;
+const float PAW_Y_LOWEST = -184.0f;
+const float PAW_X_RANGE_SCALE = 1.2f;
+
+// Servo ranges for channels 0–11
+const int servoMin[12] = { 63, 0, 13, 60, 0, 60, 20, 73, 80, 15, 63, 40 };
+const int servoMax[12] = { 120, 60, 90, 120, 60, 120, 70, 110, 120, 63, 120, 80 };
+// Default servo positions
+const int servoDefault[12] = { 85, 40, 63, 90, 40, 82, 50, 86, 97, 45, 90, 63 };
+
+// Shoulder channels: 2 = 63°, 5 = 82°, 8 = 97°, 11 = 63°
+const int SHOULDER_CH[4] = {2, 5, 8, 11};
+
+// Paw path coordinates(mm)
+const float pawPositions[][2] = 
+{
+  {-8, -175}, {-7, -177}, {-6, -179}, {-5, -180},
+  {-4, -181}, {-3, -182}, {-2, -183}, {-1, -183},
+  { 0, -184}, { 1, -183}, { 2, -183}, { 3, -182},
+  { 4, -181}, { 5, -180}, { 6, -179}, { 7, -177},
+  { 8, -175}, { 7, -165}, { 6, -163}, { 5, -162}, 
+  { 4, -161}, { 3, -160}, { 2, -159}, { 1, -159}, 
+  { 0, -158}, {-1, -159}, {-2, -159}, {-3, -160}, 
+  {-4, -161}, {-5, -162}, {-6, -163}, {-7, -165}, 
+  {-8, -168}
+};
+
+const int NUM_POINTS = sizeof(pawPositions) / sizeof(pawPositions[0]);
+const int LEG_PHASE_OFFSET = NUM_POINTS / 2;
+
+float referenceA[4];
+float referenceB[4];
+bool referencesSet = false;
+
+bool stopped = false;
+int pointIndex = 0;
+
+float adjustPawX(float x) 
+{
+  return x * PAW_X_RANGE_SCALE;
+}
+
+float adjustPawY(float y) 
+{
+  return PAW_Y_LOWEST + (y - PAW_Y_LOWEST) * PAW_Y_RANGE_SCALE - PAW_LOWER_OFFSET_MM;
+}
+
+void setServo(int channel, float angle) 
+{
+  angle = constrain(angle, (float)servoMin[channel], (float)servoMax[channel]);
+  int pulse = SERVOMIN + (int)((angle / 180.0f) * (SERVOMAX - SERVOMIN));
+  pwm.setPWM(channel, 0, pulse);
+}
+
+void lockShoulders() 
+{
+  setServo(2, 63);
+  setServo(5, 82);
+  setServo(8, 97);
+  setServo(11, 63);
+}
+
+float wrap180(float angle) 
+{
+  while (angle > 180.0f) angle -= 360.0f;
+  while (angle < -180.0f) angle += 360.0f;
+  return angle;
+}
+
+void checkSerial() 
+{
+  while (Serial.available() > 0) 
+  {
+    char command = Serial.read();
+
+    if (command == 's' || command == 'S') 
+    {
+      stopped = true;
+      Serial.println("STOPPED - holding current positions");
+    }
+    else if (command == 'r' || command == 'R') 
+    {
+      stopped = false;
+      Serial.println("RESUMED");
+    }
+  }
+}
+
+void controlledDelay(int duration) 
+{
+  unsigned long start = millis();
+
+  while (millis() - start < (unsigned long)duration) 
+  {
+    checkSerial();
+
+    if (stopped) 
+    {
+      return;
+    }
+
+    delay(1);
+  }
+}
+
+bool calculateUpperAngle(float x, float y, float baseX, float &angle) 
+{
+  float dx = x - baseX;
+  float r = sqrt(dx * dx + y * y);
+
+  if (r > L1 + L2 || r < fabs(L1 - L2) || r < 0.001f) 
+  {
+    return false;
+  }
+
+  float a = (L1 * L1 - L2 * L2 + r * r) / (2.0f * r);
+  float hSquared = L1 * L1 - a * a;
+
+  if (hSquared < -0.01f) 
+  {
+    return false;
+  }
+
+  if (hSquared < 0.0f) 
+  {
+    hSquared = 0.0f;
+  }
+
+  float h = sqrt(hSquared);
+  float ux = dx / r;
+  float uy = y / r;
+
+  float ex1 = baseX + a * ux - h * uy;
+  float ey1 = a * uy + h * ux;
+
+  float ex2 = baseX + a * ux + h * uy;
+  float ey2 = a * uy - h * ux;
+
+  float ex, ey;
+
+  if (ey1 >= ey2) 
+  {
+    ex = ex1;
+    ey = ey1;
+  } 
+  else 
+  {
+    ex = ex2;
+    ey = ey2;
+  }
+
+  angle = atan2(ey, ex - baseX) * 180.0f / PI;
+  return true;
+}
+
+bool calculatePawAngles(float x, float y, float &angleA, float &angleB) 
+{
+  x = adjustPawX(x);
+  y = adjustPawY(y);
+
+  if (!calculateUpperAngle(x, y, -D / 2.0f, angleA)) 
+  {
+    return false;
+  }
+
+  if (!calculateUpperAngle(x, y, D / 2.0f, angleB)) 
+  {
+    return false;
+  }
+
+  return true;
+}
+
+bool moveAllLegs(const int legPoint[4]) 
+{
+  float angleA[4];
+  float angleB[4];
+
+  for (int leg = 0; leg < 4; leg++) 
+  {
+    int p = legPoint[leg];
+
+    if (!calculatePawAngles(pawPositions[p][0], pawPositions[p][1], angleA[leg], angleB[leg])) 
+    {
+      Serial.print("Leg linkage unreachable at point ");
+      Serial.println(p + 1);
+      return false;
+    }
+  }
+
+  if (!referencesSet) 
+  {
+    for (int leg = 0; leg < 4; leg++) 
+    {
+      referenceA[leg] = angleA[leg];
+      referenceB[leg] = angleB[leg];
+    }
+    referencesSet = true;
+  }
+
+  for (int leg = 0; leg < 4; leg++) 
+  {
+    int channelA = LEG_A_CH[leg];
+    int channelB = LEG_B_CH[leg];
+
+    float deltaA = LEG_DIRECTION[leg] * wrap180(angleA[leg] - referenceA[leg]);
+    float deltaB = LEG_DIRECTION[leg] * wrap180(angleB[leg] - referenceB[leg]);
+
+    setServo(channelA, servoDefault[channelA] + deltaA);
+    setServo(channelB, servoDefault[channelB] + deltaB);
+  }
+
+  lockShoulders();
+
+  Serial.print("FR point ");
+  Serial.print(legPoint[0] + 1);
+  Serial.print(" | BL point ");
+  Serial.print(legPoint[1] + 1);
+  Serial.print(" | FL point ");
+  Serial.print(legPoint[2] + 1);
+  Serial.print(" | BR point ");
+  Serial.println(legPoint[3] + 1);
+
+  return true;
+}
+
+void setup() 
+{
+  Serial.begin(115200);
+  
+  //initialize Wire with ESP32 standard SDA/SCL pins
+  Wire.begin(21, 22);
+
+  pwm.begin();
+  pwm.setPWMFreq(50);
+  delay(300);
+
+  // Initialize all eight moving leg servos.
+  for (int leg = 0; leg < 4; leg++) 
+  {
+    setServo(LEG_A_CH[leg], servoDefault[LEG_A_CH[leg]]);
+    setServo(LEG_B_CH[leg], servoDefault[LEG_B_CH[leg]]);
+  }
+
+  lockShoulders();
+
+  Serial.println("BARQ V5 walking forward test");
+  Serial.println("Send 's' to stop; send 'r' to resume.");
+}
+
+void loop() 
+{
+  checkSerial();
+  lockShoulders();
+
+  if (stopped) 
+  {
+    delay(1);
+    return;
+  }
+
+  int phasePoint = (pointIndex + LEG_PHASE_OFFSET) % NUM_POINTS;
+
+  // Leg order: front right, back left, front left, back right.
+  int legPoint[4] = 
+  {
+    (NUM_POINTS - pointIndex) % NUM_POINTS, 
+    pointIndex, 
+    (LEG_PHASE_OFFSET - pointIndex + NUM_POINTS) % NUM_POINTS, 
+    phasePoint
+  };
+
+  if (!moveAllLegs(legPoint)) 
+  {
+    stopped = true;
+    Serial.println("servo stopped: unreachable point");
+    return;
+  }
+
+  pointIndex++;
+
+  if (pointIndex >= NUM_POINTS) 
+  {
+    pointIndex = 0;
+  }
+
+  controlledDelay(MOVEMENT_SPEED);
+}
