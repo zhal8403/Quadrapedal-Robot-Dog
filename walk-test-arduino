@@ -63,7 +63,7 @@ bool stopped = false;
 bool isCrouched = false;
 int pointIndex = 0;
 int gaitDirection = 1; // 1 for forward, -1 for backward
-int gaitMode = 0;      // 0 = Straight, 1 = Turn Right
+int gaitMode = 0;      // 0 = Straight, 1 = Turn Right, 2 = Turn Left
 
 float adjustPawX(float x) 
 {
@@ -127,7 +127,7 @@ void checkSerial()
       isCrouched = true;
       Serial.println("CROUCHED");
     }
-    else if (command == 'f' || command == 'F' || command == 'r' || command == 'R') 
+    else if (command == 'f' || command == 'F') 
     {
       stopped = false;
       isCrouched = false;
@@ -143,13 +143,21 @@ void checkSerial()
       gaitDirection = -1;
       Serial.println("BACKWARD");
     }
-    else if (command == 't' || command == 'T') 
+    else if (command == 'r' || command == 'R' || command == 't' || command == 'T') 
     {
       stopped = false;
       isCrouched = false;
       gaitMode = 1; // Turn Right mode
       gaitDirection = 1;
       Serial.println("RESUMED - Turning Right");
+    }
+    else if (command == 'l' || command == 'L') 
+    {
+      stopped = false;
+      isCrouched = false;
+      gaitMode = 2; // Turn Left mode
+      gaitDirection = 1;
+      Serial.println("RESUMED - Turning Left");
     }
   }
 }
@@ -309,7 +317,7 @@ void setup()
   lockShoulders();
 
   Serial.println("BARQ V5 four-leg gait ready");
-  Serial.println("Commands: f=Forward, b=Backward, t=Turn Right, c=Lower/Crouch, s=Stop & Disable");
+  Serial.println("Commands: f=Forward, b=Backward, r/t=Turn Right, l=Turn Left, c=Lower/Crouch, s=Stop & Disable");
 }
 
 void loop() 
@@ -343,7 +351,15 @@ void loop()
     legPoint[1] = pointIndex;                                 // Back Left (Forward)
     legPoint[2] = (LEG_PHASE_OFFSET - pointIndex + NUM_POINTS) % NUM_POINTS; // Front Left (Forward)
     legPoint[3] = inversePoint;                               // Back Right (Backward)
-  } 
+  }
+  else if (gaitMode == 2) 
+  {
+    // TURN LEFT MODE (Right side forward, Left side backward)
+    legPoint[0] = pointIndex;                                 // Front Right (Forward)
+    legPoint[1] = inversePoint;                               // Back Left (Backward)
+    legPoint[2] = inversePoint;                               // Front Left (Backward)
+    legPoint[3] = pointIndex;                                 // Back Right (Forward)
+  }
   else 
   {
     // STRAIGHT MODE
