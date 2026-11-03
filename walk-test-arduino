@@ -16,17 +16,23 @@ const int LEG_B_CH[4] = {1, 4, 7, 10};
 const float LEG_DIRECTION[4] = {1.0f, -1.0f, -1.0f, 1.0f};
 
 // Linkage dimensions (mm)
-const float D  = 27.5f;
+const float D  = 27.5f; 
 const float L1 = 80.966f;
 const float L2 = 110.969f;
 
 // Motion settings
 const int LOOP_DELAY_MS = 15;
-const float PAW_LOWER_OFFSET_MM = 0.0f;
 const float PAW_Y_RANGE_SCALE = 0.22f;
 const float PAW_Y_LOWEST = -184.0f;
 const float PAW_X_RANGE_SCALE = 1.7f;
 const float CROUCH_HEIGHT = -210.0f;
+const float PANCAKE_SIDE_OFFSET_MM = 55.0f;
+const float IDLE_Y_CENTER_MM = -170.0f;
+const float IDLE_Y_AMPLITUDE_MM = 22.0f;
+const float JUMP_Y_START_MM = -185.0f;
+const float JUMP_Y_LAUNCH_MM = -210.0f;
+const float JUMP_Y_AIR_MM = -130.0f;
+const float JUMP_Y_RECOVER_MM = -170.0f;
 
 // Servo ranges for channels 0–11
 const int servoMin[12] = {63, 0, 13, 60, 0, 60, 20, 73, 80, 15, 63, 40};
@@ -63,7 +69,7 @@ bool stopped = false;
 bool isCrouched = false;
 int pointIndex = 0;
 int gaitDirection = 1; // 1 for forward, -1 for backward
-int gaitMode = 0;      // 0 = Straight, 1 = Turn Right, 2 = Turn Left
+int gaitMode = 0;      // 0 = Straight, 1 = Turn Right, 2 = Turn Left, 3 = Pancake, 4 = Idle, 5 = Jump
 
 float adjustPawX(float x) 
 {
@@ -72,7 +78,7 @@ float adjustPawX(float x)
 
 float adjustPawY(float y) 
 {
-  return PAW_Y_LOWEST + (y - PAW_Y_LOWEST) * PAW_Y_RANGE_SCALE - PAW_LOWER_OFFSET_MM;
+  return PAW_Y_LOWEST + (y - PAW_Y_LOWEST) * PAW_Y_RANGE_SCALE;
 }
 
 void setServo(int channel, float angle) 
@@ -143,13 +149,13 @@ void checkSerial()
       gaitDirection = -1;
       Serial.println("BACKWARD");
     }
-    else if (command == 'r' || command == 'R' || command == 't' || command == 'T') 
+    else if (command == 'r' || command == 'R') 
     {
       stopped = false;
       isCrouched = false;
       gaitMode = 1; // Turn Right mode
       gaitDirection = 1;
-      Serial.println("RESUMED - Turning Right");
+      Serial.println("RIGHT TURN");
     }
     else if (command == 'l' || command == 'L') 
     {
@@ -157,7 +163,31 @@ void checkSerial()
       isCrouched = false;
       gaitMode = 2; // Turn Left mode
       gaitDirection = 1;
-      Serial.println("RESUMED - Turning Left");
+      Serial.println("LEFT TURN");
+    }
+    else if (command == 'p' || command == 'P') 
+    {
+      stopped = false;
+      isCrouched = false;
+      gaitMode = 3; // Pancake mode
+      gaitDirection = 1;
+      Serial.println("PANCAKE MODE");
+    }
+    else if (command == 'i' || command == 'I') 
+    {
+      stopped = false;
+      isCrouched = false;
+      gaitMode = 4; // Idle mode
+      gaitDirection = 1;
+      Serial.println("IDLE MODE");
+    }
+    else if (command == 'j' || command == 'J') 
+    {
+      stopped = false;
+      isCrouched = false;
+      gaitMode = 5; // Jump mode
+      gaitDirection = 1;
+      Serial.println("JUMP MODE");
     }
   }
 }
@@ -256,9 +286,47 @@ bool moveAllLegs(const int legPoint[4], bool forceCrouch = false)
 
   for (int leg = 0; leg < 4; leg++) 
   {
-    int p = legPoint[leg];
-    float targetX = pawPositions[p][0];
-    float targetY = pawPositions[p][1];
+    float targetX = 0.0f;
+    float targetY = 0.0f;
+
+    if (gaitMode == 3) 
+    {
+      float sideSign = (leg == 0 || leg == 3) ? 1.0f : -1.0f;
+      targetX = sideSign * PANCAKE_SIDE_OFFSET_MM;
+      targetY = -170.0f;
+    }
+    else if (gaitMode == 4) 
+    {
+      float phase = (float)millis() / 1000.0f + leg * 0.8f;
+      targetX = 0.0f;
+      targetY = IDLE_Y_CENTER_MM + sin(phase * 2.0f) * IDLE_Y_AMPLITUDE_MM;
+    }
+    else if (gaitMode == 5) 
+    {
+      float phase = (float)(millis() % 2200UL) / 2200.0f;
+      targetX = 0.0f;
+
+      if (phase < 0.25f) 
+      {
+        targetY = JUMP_Y_START_MM + (JUMP_Y_LAUNCH_MM - JUMP_Y_START_MM) * (phase / 0.25f);
+      }
+      else if (phase < 0.65f) 
+      {
+        float local = (phase - 0.25f) / (0.40f);
+        targetY = JUMP_Y_LAUNCH_MM + (JUMP_Y_AIR_MM - JUMP_Y_LAUNCH_MM) * local;
+      }
+      else 
+      {
+        float local = (phase - 0.65f) / 0.35f;
+        targetY = JUMP_Y_AIR_MM + (JUMP_Y_RECOVER_MM - JUMP_Y_AIR_MM) * local;
+      }
+    }
+    else 
+    {
+      int p = legPoint[leg];
+      targetX = pawPositions[p][0];
+      targetY = pawPositions[p][1];
+    }
 
     if (forceCrouch && (leg == 1 || leg == 3)) 
     {
@@ -317,7 +385,7 @@ void setup()
   lockShoulders();
 
   Serial.println("BARQ V5 four-leg gait ready");
-  Serial.println("Commands: f=Forward, b=Backward, r/t=Turn Right, l=Turn Left, c=Lower/Crouch, s=Stop & Disable");
+  Serial.println("Commands: f=Forward, b=Backward, r/t=Turn Right, l=Turn Left, p=Pancake, i=Idle, j=Jump, c=Lower/Crouch, s=Stop & Disable");
 }
 
 void loop() 
@@ -359,6 +427,13 @@ void loop()
     legPoint[1] = inversePoint;                               // Back Left (Backward)
     legPoint[2] = inversePoint;                               // Front Left (Backward)
     legPoint[3] = pointIndex;                                 // Back Right (Forward)
+  }
+  else if (gaitMode == 3 || gaitMode == 4 || gaitMode == 5) 
+  {
+    legPoint[0] = 0;
+    legPoint[1] = 0;
+    legPoint[2] = 0;
+    legPoint[3] = 0;
   }
   else 
   {
