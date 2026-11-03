@@ -7,33 +7,33 @@ Adafruit_PWMServoDriver pwm(0x40);
 const int SERVOMIN = 120;
 const int SERVOMAX = 620;
 
-// Leg channel pairs, in this order:
+// Leg servo pairs, in this order:
 // 0 = front right, 1 = back left, 2 = front left, 3 = back right
 const int LEG_A_CH[4] = {0, 3, 6, 9};
 const int LEG_B_CH[4] = {1, 4, 7, 10};
 
-// Right-side legs use the positive direction; left-side legs are mirrored.
+// Right-side legs use the positive direction, left-side legs are mirrored.
 const float LEG_DIRECTION[4] = {1.0f, -1.0f, -1.0f, 1.0f};
 
-// Linkage dimensions in millimeters
+// Linkage dimensions (mm)
 const float D  = 27.5f;
 const float L1 = 80.966f;
 const float L2 = 110.969f;
 
 // Motion settings
-const int MOVEMENT_SPEED = 10;
-const float PAW_LOWER_OFFSET_MM = 5.0f;
-const float PAW_Y_RANGE_SCALE = 0.15f;
+const int LOOP_DELAY_MS = 15;
+const float PAW_LOWER_OFFSET_MM = 0.0f;
+const float PAW_Y_RANGE_SCALE = 0.22f;
 const float PAW_Y_LOWEST = -184.0f;
-const float PAW_X_RANGE_SCALE = 1.2f;
+const float PAW_X_RANGE_SCALE = 1.7f;
+const float CROUCH_HEIGHT = -210.0f;
 
 // Servo ranges for channels 0–11
-const int servoMin[12] = { 63, 0, 13, 60, 0, 60, 20, 73, 80, 15, 63, 40 };
-
-const int servoMax[12] = { 120, 60, 90, 120, 60, 120, 70, 110, 120, 63, 120, 80 };
+const int servoMin[12] = {63, 0, 13, 60, 0, 60, 20, 73, 80, 15, 63, 40};
+const int servoMax[12] = {120, 60, 90, 120, 60, 120, 70, 110, 120, 63, 120, 80};
 
 // Default servo positions
-const int servoDefault[12] = { 85, 40, 63, 90, 40, 82, 50, 86, 97, 45, 90, 63 };
+const int servoDefault[12] = {85, 40, 63, 90, 40, 82, 50, 86, 97, 45, 90, 63};
 
 // Shoulder channels: 2 = 63°, 5 = 82°, 8 = 97°, 11 = 63°
 const int SHOULDER_CH[4] = {2, 5, 8, 11};
@@ -53,7 +53,6 @@ const float pawPositions[][2] =
 };
 
 const int NUM_POINTS = sizeof(pawPositions) / sizeof(pawPositions[0]);
-
 const int LEG_PHASE_OFFSET = NUM_POINTS / 2;
 
 float referenceA[4];
@@ -61,7 +60,10 @@ float referenceB[4];
 bool referencesSet = false;
 
 bool stopped = false;
+bool isCrouched = false;
 int pointIndex = 0;
+int gaitDirection = 1; // 1 for forward, -1 for backward
+int gaitMode = 0;      // 0 = Straight, 1 = Turn Right
 
 float adjustPawX(float x) 
 {
@@ -76,8 +78,19 @@ float adjustPawY(float y)
 void setServo(int channel, float angle) 
 {
   angle = constrain(angle, (float)servoMin[channel], (float)servoMax[channel]);
+
   int pulse = SERVOMIN + (int)((angle / 180.0f) * (SERVOMAX - SERVOMIN));
+
   pwm.setPWM(channel, 0, pulse);
+}
+
+// Turn off all motor PWM outputs completely
+void disableAllServos() 
+{
+  for (int i = 0; i < 12; i++) 
+  {
+    pwm.setPWM(i, 0, 4096);
+  }
 }
 
 void lockShoulders() 
@@ -104,12 +117,39 @@ void checkSerial()
     if (command == 's' || command == 'S') 
     {
       stopped = true;
-      Serial.println("STOPPED - holding current positions");
+      isCrouched = false;
+      disableAllServos();
+      Serial.println("STOPPED");
     }
-    else if (command == 'r' || command == 'R') 
+    else if (command == 'c' || command == 'C') 
+    {
+      stopped = true;
+      isCrouched = true;
+      Serial.println("CROUCHED");
+    }
+    else if (command == 'f' || command == 'F' || command == 'r' || command == 'R') 
     {
       stopped = false;
-      Serial.println("RESUMED");
+      isCrouched = false;
+      gaitMode = 0; // Straight mode
+      gaitDirection = 1;
+      Serial.println("FORWARD");
+    }
+    else if (command == 'b' || command == 'B') 
+    {
+      stopped = false;
+      isCrouched = false;
+      gaitMode = 0; // Straight mode
+      gaitDirection = -1;
+      Serial.println("BACKWARD");
+    }
+    else if (command == 't' || command == 'T') 
+    {
+      stopped = false;
+      isCrouched = false;
+      gaitMode = 1; // Turn Right mode
+      gaitDirection = 1;
+      Serial.println("RESUMED - Turning Right");
     }
   }
 }
@@ -131,7 +171,7 @@ void controlledDelay(int duration)
   }
 }
 
-bool calculateUpperAngle(float x, float y, float baseX, float &angle) 
+bool calculateUpperAngle( float x, float y, float baseX, float &angle) 
 {
   float dx = x - baseX;
   float r = sqrt(dx * dx + y * y);
@@ -183,7 +223,7 @@ bool calculateUpperAngle(float x, float y, float baseX, float &angle)
   return true;
 }
 
-bool calculatePawAngles( float x, float y, float &angleA, float &angleB ) 
+bool calculatePawAngles(float x, float y, float &angleA, float &angleB) 
 {
   x = adjustPawX(x);
   y = adjustPawY(y);
@@ -201,7 +241,7 @@ bool calculatePawAngles( float x, float y, float &angleA, float &angleB )
   return true;
 }
 
-bool moveAllLegs(const int legPoint[4]) 
+bool moveAllLegs(const int legPoint[4], bool forceCrouch = false) 
 {
   float angleA[4];
   float angleB[4];
@@ -209,11 +249,18 @@ bool moveAllLegs(const int legPoint[4])
   for (int leg = 0; leg < 4; leg++) 
   {
     int p = legPoint[leg];
+    float targetX = pawPositions[p][0];
+    float targetY = pawPositions[p][1];
 
-    if (!calculatePawAngles(pawPositions[p][0], pawPositions[p][1], angleA[leg], angleB[leg])) 
+    if (forceCrouch && (leg == 1 || leg == 3)) 
     {
-      Serial.print("Leg linkage unreachable at point ");
-      Serial.println(p + 1);
+      targetX = 0.0f; 
+      targetY = CROUCH_HEIGHT; 
+    }
+
+    if (!calculatePawAngles(targetX, targetY, angleA[leg], angleB[leg])) {
+      Serial.print("Leg linkage unreachable at leg ");
+      Serial.println(leg);
       return false;
     }
   }
@@ -234,7 +281,6 @@ bool moveAllLegs(const int legPoint[4])
     int channelB = LEG_B_CH[leg];
 
     float deltaA = LEG_DIRECTION[leg] * wrap180(angleA[leg] - referenceA[leg]);
-
     float deltaB = LEG_DIRECTION[leg] * wrap180(angleB[leg] - referenceB[leg]);
 
     setServo(channelA, servoDefault[channelA] + deltaA);
@@ -242,16 +288,6 @@ bool moveAllLegs(const int legPoint[4])
   }
 
   lockShoulders();
-
-  Serial.print("FR point ");
-  Serial.print(legPoint[0] + 1);
-  Serial.print(" | BL point ");
-  Serial.print(legPoint[1] + 1);
-  Serial.print(" | FL point ");
-  Serial.print(legPoint[2] + 1);
-  Serial.print(" | BR point ");
-  Serial.println(legPoint[3] + 1);
-
   return true;
 }
 
@@ -264,7 +300,6 @@ void setup()
   pwm.setPWMFreq(50);
   delay(300);
 
-  // Initialize all eight moving leg servos.
   for (int leg = 0; leg < 4; leg++) 
   {
     setServo(LEG_A_CH[leg], servoDefault[LEG_A_CH[leg]]);
@@ -273,43 +308,69 @@ void setup()
 
   lockShoulders();
 
-  Serial.println("BARQ V5 walking forward test");
-  Serial.println("Send 's' to stop; send 'r' to resume.");
+  Serial.println("BARQ V5 four-leg gait ready");
+  Serial.println("Commands: f=Forward, b=Backward, t=Turn Right, c=Lower/Crouch, s=Stop & Disable");
 }
 
 void loop() 
 {
   checkSerial();
-  lockShoulders();
 
   if (stopped) 
   {
-    delay(1);
+    if (isCrouched) 
+    {
+      int phasePoint = (pointIndex + LEG_PHASE_OFFSET) % NUM_POINTS;
+      int inversePoint = (NUM_POINTS - pointIndex) % NUM_POINTS;
+      int legPoint[4] = { (NUM_POINTS - pointIndex) % NUM_POINTS, pointIndex, (LEG_PHASE_OFFSET - pointIndex + NUM_POINTS) % NUM_POINTS, phasePoint };
+      moveAllLegs(legPoint, true);
+    }
+    delay(15);
     return;
   }
+
+  lockShoulders();
 
   int phasePoint = (pointIndex + LEG_PHASE_OFFSET) % NUM_POINTS;
+  int inversePoint = (NUM_POINTS - pointIndex) % NUM_POINTS;
 
-  // Leg order: front right, back left, front left, back right.
-  // The front legs count backward; the back legs count forward.
-  int legPoint[4] = 
+  int legPoint[4];
+
+  if (gaitMode == 1) 
   {
-    (NUM_POINTS - pointIndex) % NUM_POINTS, pointIndex, (LEG_PHASE_OFFSET - pointIndex + NUM_POINTS) % NUM_POINTS, phasePoint
-  };
+    // TURN RIGHT MODE (Left side forward, Right side backward)
+    legPoint[0] = inversePoint;                               // Front Right (Backward)
+    legPoint[1] = pointIndex;                                 // Back Left (Forward)
+    legPoint[2] = (LEG_PHASE_OFFSET - pointIndex + NUM_POINTS) % NUM_POINTS; // Front Left (Forward)
+    legPoint[3] = inversePoint;                               // Back Right (Backward)
+  } 
+  else 
+  {
+    // STRAIGHT MODE
+    legPoint[0] = (NUM_POINTS - pointIndex) % NUM_POINTS;     // Front Right
+    legPoint[1] = pointIndex;                                 // Back Left
+    legPoint[2] = (LEG_PHASE_OFFSET - pointIndex + NUM_POINTS) % NUM_POINTS; // Front Left
+    legPoint[3] = phasePoint;                                 // Back Right
+  }
 
-  if (!moveAllLegs(legPoint)) 
+  if (!moveAllLegs(legPoint, false)) 
   {
     stopped = true;
-    Serial.println("servo stopped: unreachable point");
+    disableAllServos();
+    Serial.println("Gait stopped: unreachable point. Motors disabled.");
     return;
   }
 
-  pointIndex++;
+  pointIndex += gaitDirection;
 
   if (pointIndex >= NUM_POINTS) 
   {
     pointIndex = 0;
+  } 
+  else if (pointIndex < 0) 
+  {
+    pointIndex = NUM_POINTS - 1;
   }
 
-  controlledDelay(MOVEMENT_SPEED);
+  controlledDelay(LOOP_DELAY_MS);
 }
