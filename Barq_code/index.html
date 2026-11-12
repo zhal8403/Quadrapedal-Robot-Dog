@@ -13,37 +13,41 @@
     
     <button id="connectBtn">Connect Bluetooth</button>
 
-    <div class="section">
+    <div class="section speed-section">
         <h3>Speed Control</h3>
         <label for="speedRange">Speed: <span id="speedVal">Fast (15ms)</span></label>
         <br>
         <input type="range" id="speedRange" min="5" max="40" value="15" step="1" oninput="updateSpeed(this.value)">
     </div>
 
-    <div class="section">
-        <h3>Movement Controls</h3>
-        <p class="hint">Keyboard: W (Fwd), S (Stop), A (Left), D (Right), X (Back)</p>
-        <div class="control-grid">
-            <div class="empty"></div>
-            <button onclick="sendCommand('f')">▲<br>Fwd [W]</button>
-            <div class="empty"></div>
-            <button onclick="sendCommand('l')">◀<br>Left [A]</button>
-            <button class="stop" onclick="sendCommand('s')">■<br>Stop [S]</button>
-            <button onclick="sendCommand('r')">▶<br>Right [D]</button>
-            <div class="empty"></div>
-            <button onclick="sendCommand('b')">▼<br>Back [X]</button>
-            <div class="empty"></div>
+    <!-- Side-by-side container for controls and actions -->
+    <div class="dashboard-grid">
+        <div class="section">
+            <h3>Movement Controls</h3>
+            <p class="hint">Keyboard: W, A, S, D, Space</p>
+            <div class="control-grid">
+                <div class="empty"></div>
+                <button onclick="sendCommand('f')">▲<br>Fwd [W]</button>
+                <div class="empty"></div>
+                <button onclick="sendCommand('l')">◀<br>Left [A]</button>
+                <button class="stop" onclick="sendCommand('s')">■<br>Stop [Space]</button>
+                <button onclick="sendCommand('r')">▶<br>Right [D]</button>
+                <div class="empty"></div>
+                <button onclick="sendCommand('b')">▼<br>Back [X]</button>
+                <div class="empty"></div>
+            </div>
         </div>
-    </div>
 
-    <div class="section">
-        <h3>More Actions</h3>
-        <div>
-            <button onclick="sendCommand('c')">Crouch [C]</button>
-            <button onclick="sendCommand('w')">Wiggle [6]</button>
-            <button onclick="sendCommand('7')">Shake [7]</button>
-            <button onclick="sendCommand('5')">Up / Down [5]</button>
-            <button onclick="sendCommand('i')">Idle [X]</button>
+        <div class="section">
+            <h3>More Actions</h3>
+            <p class="hint">Poses & Animations</p>
+            <div class="action-grid">
+                <button onclick="sendCommand('c')">Crouch [C]</button>
+                <button onclick="sendCommand('w')">Wiggle</button>
+                <button onclick="sendCommand('7')">Shake [7]</button>
+                <button onclick="sendCommand('5')">Sync Idle [5]</button>
+                <button onclick="sendCommand('i')">Alt Idle [I]</button>
+            </div>
         </div>
     </div>
 
