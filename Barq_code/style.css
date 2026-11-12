@@ -110,3 +110,34 @@ input[type=range]
     accent-color: #1f6feb;
     cursor: pointer;
 }
+
+/* Container to place Movement Controls and Actions side-by-side */
+.dashboard-grid {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 20px;
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+/* Make each panel share space evenly on wider screens */
+.dashboard-grid .section {
+    flex: 1;
+    min-width: 320px;
+    max-width: 420px;
+    margin: 0;
+}
+
+/* Specific styling for the action buttons grid */
+.action-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    margin-top: 15px;
+}
+
+.action-grid button {
+    width: 100%;
+    margin: 0;
+}
