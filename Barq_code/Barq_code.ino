@@ -137,7 +137,7 @@ float wrap180(float angle)
     return angle;
 }
 
-void executeWiggle() 
+void Wiggle() 
 {
     int backLeft = SHOULDER_CH[1], backRight = SHOULDER_CH[3];
     int defaultBL = servoDefault[backLeft], defaultBR = servoDefault[backRight];
@@ -164,7 +164,7 @@ void executeWiggle()
     stopped = true;
 }
 
-void executeShake() 
+void Shake() 
 {
     int backLeft = SHOULDER_CH[1], backRight = SHOULDER_CH[3];
     int defaultBL = servoDefault[backLeft], defaultBR = servoDefault[backRight];
@@ -203,43 +203,67 @@ void handleCommand(String cmd)
     char command = cmd.charAt(0);
     if (command == 's' || command == 'S') 
     {
-        stopped = true; isCrouched = false; disableAllServos();
+        stopped = true; 
+        isCrouched = false; disableAllServos();
     } 
     else if (command == 'c' || command == 'C') 
     {
-        stopped = true; isCrouched = true;
+        stopped = true; 
+        isCrouched = true;
     } 
     else if (command == 'f' || command == 'F') 
     {
-        stopped = false; isCrouched = false; gaitMode = 0; gaitDirection = 1;
+        stopped = false; 
+        isCrouched = false; 
+        gaitMode = 0; 
+        gaitDirection = 1;
     } 
     else if (command == 'b' || command == 'B') 
     {
-        stopped = false; isCrouched = false; gaitMode = 0; gaitDirection = -1;
+        stopped = false; 
+        isCrouched = false;
+        gaitMode = 0; 
+        gaitDirection = -1;
     } 
     else if (command == 'r' || command == 'R') 
     {
-        stopped = false; isCrouched = false; gaitMode = 1; gaitDirection = 1;
+        stopped = false; 
+        isCrouched = false; 
+        gaitMode = 1; 
+        gaitDirection = 1;
     } 
     else if (command == 'l' || command == 'L') 
     {
-        stopped = false; isCrouched = false; gaitMode = 2; gaitDirection = 1;
+        stopped = false; 
+        isCrouched = false; 
+        gaitMode = 2; 
+        gaitDirection = 1;
     } 
     else if (command == 'w' || command == 'W') 
     {
-        stopped = false; isCrouched = false; executeWiggle();
+        stopped = false; 
+        isCrouched = false; 
+        Wiggle();
     } 
     else if (command == '7') 
     {
-        stopped = false; isCrouched = false; executeShake();
+        stopped = false; 
+        isCrouched = false; 
+        Shake();
     } 
     else if (command == 'i' || command == 'I') 
     {
-        stopped = false; isCrouched = false; gaitMode = 5; gaitDirection = 1;
+        stopped = false; 
+        isCrouched = false; 
+        gaitMode = 5; 
+        gaitDirection = 1;
     } 
     else if (command == '5') 
     {
-        stopped = false; isCrouched = false; gaitMode = 4; gaitDirection = 1;
+        stopped = false; 
+        isCrouched = false; 
+        gaitMode = 4; 
+        gaitDirection = 1;
     }
 }
 
