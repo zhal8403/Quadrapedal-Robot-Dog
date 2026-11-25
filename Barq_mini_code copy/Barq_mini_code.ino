@@ -25,7 +25,6 @@ const float PAW_Y_RANGE_SCALE = 0.22f;
 const float PAW_Y_LOWEST = -54.0f;       // Scaled down for smaller reach
 const float PAW_X_RANGE_SCALE = 1.0f;
 const float CROUCH_HEIGHT = -60.0f;
-const float PANCAKE_HEIGHT_MM = -46.0f; 
 const float IDLE_Y_CENTER_MM = -49.0f;
 const float IDLE_Y_AMPLITUDE_MM = 6.5f;
 
@@ -140,61 +139,6 @@ float wrap180(float angle)
     return angle;
 }
 
-void Wiggle() 
-{
-    int backLeft = SHOULDER_CH[1], backRight = SHOULDER_CH[3];
-    int defaultBL = servoDefault[backLeft], defaultBR = servoDefault[backRight];
-    setServo(SHOULDER_CH[0], servoDefault[SHOULDER_CH[0]]);
-    setServo(SHOULDER_CH[2], servoDefault[SHOULDER_CH[2]]);
-    int wiggleOffset = 10, steps = 15, stepDelay = 25;
-
-    for (int cycle = 0; cycle < 3; cycle++) 
-    {
-        for (int s = 0; s <= steps; s++) 
-        {
-            setServo(backLeft, defaultBL + ((float)wiggleOffset * s / steps));
-            setServo(backRight, defaultBR + ((float)wiggleOffset * s / steps));
-            delay(stepDelay);
-        }
-        for (int s = 0; s <= steps; s++) 
-        {
-            setServo(backLeft, (defaultBL + wiggleOffset) - ((float)(2 * wiggleOffset) * s / steps));
-            setServo(backRight, (defaultBR + wiggleOffset) - ((float)(2 * wiggleOffset) * s / steps));
-            delay(stepDelay);
-        }
-    }
-    lockShoulders();
-    stopped = true;
-}
-
-void Shake() 
-{
-    int backLeft = SHOULDER_CH[1], backRight = SHOULDER_CH[3];
-    int defaultBL = servoDefault[backLeft], defaultBR = servoDefault[backRight];
-    setServo(SHOULDER_CH[0], servoDefault[SHOULDER_CH[0]]);
-    setServo(SHOULDER_CH[2], servoDefault[SHOULDER_CH[2]]);
-    int shakeOffset = 15, steps = 15, stepDelay = 25;
-
-    for (int cycle = 0; cycle < 3; cycle++)
-    {
-        for (int s = 0; s <= steps; s++) 
-        {
-            setServo(backLeft, defaultBL + ((float)shakeOffset * s / steps));
-            setServo(backRight, defaultBR - ((float)shakeOffset * s / steps));
-            delay(stepDelay);
-        }
-
-        for (int s = 0; s <= steps; s++) 
-        {
-            setServo(backLeft, (defaultBL + shakeOffset) - ((float)(2 * shakeOffset) * s / steps));
-            setServo(backRight, (defaultBR - shakeOffset) + ((float)(2 * shakeOffset) * s / steps));
-            delay(stepDelay);
-        }
-    }
-    lockShoulders();
-    stopped = true;
-}
-
 void handleCommand(String cmd) 
 {
     if (cmd.startsWith("SPD:"))
@@ -207,7 +151,8 @@ void handleCommand(String cmd)
     if (command == 's' || command == 'S') 
     {
         stopped = true; 
-        isCrouched = false; disableAllServos();
+        isCrouched = false; 
+        disableAllServos();
     } 
     else if (command == 'c' || command == 'C') 
     {
@@ -241,18 +186,6 @@ void handleCommand(String cmd)
         isCrouched = false; 
         gaitMode = 2; 
         gaitDirection = 1;
-    } 
-    else if (command == 'w' || command == 'W') 
-    {
-        stopped = false; 
-        isCrouched = false; 
-        Wiggle();
-    } 
-    else if (command == '7') 
-    {
-        stopped = false; 
-        isCrouched = false; 
-        Shake();
     } 
     else if (command == 'i' || command == 'I') 
     {
@@ -328,10 +261,6 @@ bool moveAllLegs(const int legPoint[4], bool forceCrouch = false)
         { 
             targetY = CROUCH_HEIGHT; 
         } 
-        else if (gaitMode == 3) 
-        { 
-            targetY = PANCAKE_HEIGHT_MM; 
-        } 
         else if (gaitMode == 4) 
         {
             float phase = (float)millis() / 1000.0f;
@@ -404,7 +333,8 @@ void loop()
     {
         if (isCrouched) 
         { 
-            int dummy[4] = {0, 0, 0, 0}; moveAllLegs(dummy, true); 
+            int dummy[4] = {0, 0, 0, 0}; 
+            moveAllLegs(dummy, true); 
         }
         delay(15);
         return;
@@ -425,7 +355,7 @@ void loop()
         legPoint[0] = (LEG_PHASE_OFFSET - pointIndex + NUM_POINTS) % NUM_POINTS; legPoint[1] = inversePoint; 
         legPoint[2] = inversePoint; legPoint[3] = pointIndex; 
     } 
-    else if (gaitMode >= 3 && gaitMode <= 5) 
+    else if (gaitMode >= 4 && gaitMode <= 5) 
     {
         legPoint[0] = 0; legPoint[1] = 0; legPoint[2] = 0; legPoint[3] = 0;
     } 
@@ -439,7 +369,9 @@ void loop()
 
     if (!moveAllLegs(legPoint, false))
     { 
-        stopped = true; disableAllServos(); return; 
+        stopped = true; 
+        disableAllServos(); 
+        return; 
     }
 
     pointIndex += gaitDirection;
