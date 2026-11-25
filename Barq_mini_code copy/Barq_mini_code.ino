@@ -11,8 +11,9 @@ Adafruit_PWMServoDriver pwm(0x40);
 const int SERVOMIN = 120;
 const int SERVOMAX = 620;
 
-const int LEG_A_CH[4] = {0, 3, 6, 9};
-const int LEG_B_CH[4] = {1, 4, 7, 10};
+// 8 Servos total: 2 per leg (Leg A and Leg B)
+const int LEG_A_CH[4] = {0, 2, 4, 6};
+const int LEG_B_CH[4] = {1, 3, 5, 7};
 const float LEG_DIRECTION[4] = {1.0f, -1.0f, -1.0f, 1.0f};
 
 // Scaled dimensions from CAD (inches converted to mm)
@@ -28,11 +29,10 @@ const float CROUCH_HEIGHT = -60.0f;
 const float IDLE_Y_CENTER_MM = -49.0f;
 const float IDLE_Y_AMPLITUDE_MM = 6.5f;
 
-// Note: You may still need to calibrate these servo limits/defaults for your specific build
-const int servoMin[12] = {63, 0, 13, 60, 0, 60, 20, 73, 80, 15, 63, 40};
-const int servoMax[12] = {120, 60, 90, 120, 60, 120, 70, 110, 120, 63, 120, 80};
-const int servoDefault[12] = {85, 40, 63, 90, 40, 82, 50, 86, 97, 45, 90, 63};
-const int SHOULDER_CH[4] = {2, 5, 8, 11};
+// Servo limits, defaults, and trim values for 8 servos
+const int servoMin[8] = {63, 0, 60, 0, 20, 73, 15, 63};
+const int servoMax[8] = {120, 60, 120, 60, 70, 110, 120, 63};
+const int servoDefault[8] = {85, 40, 90, 40, 50, 86, 90, 63};
 
 // Scaled trajectory points for the smaller leg workspace
 const float pawPositions[][2] = 
@@ -118,18 +118,10 @@ void setServo(int channel, float angle)
 
 void disableAllServos() 
 {
-    for (int i = 0; i < 12; i++) 
+    for (int i = 0; i < 8; i++) 
     { 
         pwm.setPWM(i, 0, 4096); 
     }
-}
-
-void lockShoulders() 
-{
-    setServo(2, 63); 
-    setServo(5, 85); 
-    setServo(8, 97); 
-    setServo(11, 67);
 }
 
 float wrap180(float angle) 
@@ -294,7 +286,6 @@ bool moveAllLegs(const int legPoint[4], bool forceCrouch = false)
         setServo(LEG_A_CH[leg], servoDefault[LEG_A_CH[leg]] + LEG_DIRECTION[leg] * wrap180(angleA[leg] - referenceA[leg]));
         setServo(LEG_B_CH[leg], servoDefault[LEG_B_CH[leg]] + LEG_DIRECTION[leg] * wrap180(angleB[leg] - referenceB[leg]));
     }
-    lockShoulders();
     return true;
 }
 
@@ -311,7 +302,6 @@ void setup()
         setServo(LEG_A_CH[leg], servoDefault[LEG_A_CH[leg]]);
         setServo(LEG_B_CH[leg], servoDefault[LEG_B_CH[leg]]);
     }
-    lockShoulders();
 
     BLEDevice::init("BARQ_Robot");
     BLEServer *pServer = BLEDevice::createServer();
@@ -340,7 +330,6 @@ void loop()
         return;
     }
 
-    lockShoulders();
     int phasePoint = (pointIndex + LEG_PHASE_OFFSET) % NUM_POINTS;
     int inversePoint = (NUM_POINTS - pointIndex) % NUM_POINTS;
     int legPoint[4];
